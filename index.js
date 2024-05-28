@@ -167,7 +167,7 @@ async function Check(answers) {
   if (answers.action === "Create new tab") {
     await createNewTab();
   }
-  if (answers.action === "Use existing tab") {
+  if (answers.action === "Append to existing tab") {
     await ExistingTab();
   }
   if (answers.action === "Display Tab") {
