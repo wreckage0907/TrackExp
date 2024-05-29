@@ -4,44 +4,63 @@ import chalkAnimation from "chalk-animation";
 import inquirer from "inquirer";
 import fs from "fs";
 import path from "path";
+import os from "os";
 
 // FUNCTIONS
 
+function getDataDirPath() {
+  const homeDir = os.homedir();
+  const appDir = ".my-expense-tracker";
+  const dataDir = path.join(homeDir, appDir);
+  if (!fs.existsSync(dataDir)) {
+    fs.mkdirSync(dataDir, { recursive: true });
+  }
+
+  return dataDir;
+}
+
+const dataDir = getDataDirPath();
+const tabsFilePath = path.join(dataDir, "tabs.txt");
+
 async function displayContent(content) {
-  const lines = content.trim().split("\n");
-  const table = [];
-  let maxDescriptionLength = 0;
-  let maxAmountLength = 0;
+  try {
+    const lines = content.trim().split("\n");
+    const table = [];
+    let maxDescriptionLength = 0;
+    let maxAmountLength = 0;
 
-  for (const line of lines) {
-    const [description, amountStr] = line.split(":");
-    const amount = parseFloat(amountStr.split("(")[0].trim());
-    const type = amountStr.split("(")[1].trim().slice(0, -1);
+    for (const line of lines) {
+      const [description, amountStr] = line.split(":");
+      const amount = parseFloat(amountStr.split("(")[0].trim());
+      const type = amountStr.split("(")[1].trim().slice(0, -1);
 
-    let formattedAmount;
-    if (type === "Expense") {
-      formattedAmount = chalk.red(amount.toFixed(2));
-    } else {
-      formattedAmount = chalk.green(amount.toFixed(2));
+      let formattedAmount;
+      if (type === "Expense") {
+        formattedAmount = chalk.red(amount.toFixed(2));
+      } else {
+        formattedAmount = chalk.green(amount.toFixed(2));
+      }
+
+      maxDescriptionLength = Math.max(maxDescriptionLength, description.length);
+      maxAmountLength = Math.max(maxAmountLength, formattedAmount.length);
+
+      table.push({ description, formattedAmount });
     }
 
-    maxDescriptionLength = Math.max(maxDescriptionLength, description.length);
-    maxAmountLength = Math.max(maxAmountLength, formattedAmount.length);
+    const tableWidth = maxDescriptionLength + maxAmountLength + 5;
+    const separatorLine = "+" + "-".repeat(tableWidth - 2) + "+";
 
-    table.push({ description, formattedAmount });
+    console.log(separatorLine);
+    for (const { description, formattedAmount } of table) {
+      const descriptionPadded = description.padEnd(maxDescriptionLength, " ");
+      const amountPadded = formattedAmount.padStart(maxAmountLength, " ");
+      const line = `| ${descriptionPadded} | ${amountPadded} |`;
+      console.log(line);
+    }
+    console.log(separatorLine);
+  } catch (err) {
+    console.log(chalk.red("No content found"));
   }
-
-  const tableWidth = maxDescriptionLength + maxAmountLength + 5;
-  const separatorLine = "+" + "-".repeat(tableWidth - 2) + "+";
-
-  console.log(separatorLine);
-  for (const { description, formattedAmount } of table) {
-    const descriptionPadded = description.padEnd(maxDescriptionLength, " ");
-    const amountPadded = formattedAmount.padStart(maxAmountLength, " ");
-    const line = `| ${descriptionPadded} | ${amountPadded} |`;
-    console.log(line);
-  }
-  console.log(separatorLine);
 }
 
 const addContent = async (message) => {
@@ -108,7 +127,7 @@ async function createNewTab() {
   ]);
 
   const name = `${answers.tabName}.txt`;
-  const fpath = path.join(process.cwd(), name);
+  const fpath = path.join(dataDir, name);
 
   try {
     fs.writeFileSync(fpath, "");
@@ -125,15 +144,59 @@ async function createNewTab() {
       )
       .join("\n");
     fs.appendFileSync(fpath, contentToAppend);
-    fs.appendFileSync("tabs.txt", `${answers.tabName} -- ${fpath}\n`);
+    fs.appendFileSync(tabsFilePath, `${answers.tabName} -- ${name}\n`);
   } catch (err) {
     console.log(chalk.red(`Couldn't create file ${name}`));
   }
 }
 
 async function ExistingTab() {
+  if (!fs.existsSync(tabsFilePath)) {
+    console.log(chalk.redBright("No tabs found"));
+    return;
+  }
   const tabs = fs
-    .readFileSync("tabs.txt", "utf-8")
+    .readFileSync(tabsFilePath, "utf-8")
+    .split("\n")
+    .filter(Boolean)
+    .map((tab) => {
+      const [name, path] = tab.split(" -- ");
+      return { name, path };
+    });
+  if(!tabs){
+  const answers = await inquirer.prompt([
+    {
+      type: "list",
+      name: "tab",
+      message: "Choose a tab",
+      choices: tabs.map((tab) => tab.name),
+    },
+  ]);
+
+  const tab = tabs.find((tab) => tab.name === answers.tab);
+  const content = fs.readFileSync(path.join(dataDir, tab.path), "utf-8");
+  await displayContent(content);
+  const morecontent = await run();
+  const contentToAppend = morecontent
+    .map(
+      (exp) => `${exp.name}: ${exp.amount} (${exp.type ? "Income" : "Expense"})`
+    )
+    .join("\n");
+
+  fs.appendFileSync(path.join(dataDir, tab.path), "\n");
+  fs.appendFileSync(path.join(dataDir, tab.path), contentToAppend);}
+  else{
+    console.log(chalk.red("Tabs not found"));
+  }
+}
+
+async function deleteTab() {
+  if (!fs.existsSync(tabsFilePath)) {
+    console.log(chalk.redBright("No tabs found"));
+    return;
+  }
+  const tabs = fs
+    .readFileSync(tabsFilePath, "utf-8")
     .split("\n")
     .filter(Boolean)
     .map((tab) => {
@@ -151,16 +214,46 @@ async function ExistingTab() {
   ]);
 
   const tab = tabs.find((tab) => tab.name === answers.tab);
-  const content = fs.readFileSync(tab.path, "utf-8");
-  await displayContent(content);
-  const morecontent = await run();
-  const contentToAppend = morecontent
-    .map(
-      (exp) => `${exp.name}: ${exp.amount} (${exp.type ? "Income" : "Expense"})`
-    )
+
+  const tabFilePath = path.join(dataDir, tab.path);
+  fs.unlinkSync(tabFilePath);
+
+  const updatedTabs = tabs.filter((t) => t.name !== tab.name);
+  const updatedTabsContent = updatedTabs
+    .map((t) => `${t.name} -- ${t.path}`)
     .join("\n");
-  fs.appendFileSync(tab.path, "\n");
-  fs.appendFileSync(tab.path, contentToAppend);
+  fs.writeFileSync(tabsFilePath, updatedTabsContent);
+}
+
+async function displayTab() {
+  if (!fs.existsSync(tabsFilePath)) {
+    console.log(chalk.redBright("No tabs found"));
+    return;
+  }
+  const tabs = fs
+    .readFileSync(tabsFilePath, "utf-8")
+    .split("\n")
+    .filter(Boolean)
+    .map((tab) => {
+      const [name, path] = tab.split(" -- ");
+      return { name, path };
+    });
+
+  if (!tabs) {
+    const answers = await inquirer.prompt([
+      {
+        type: "list",
+        name: "tab",
+        message: "Choose a tab",
+        choices: tabs.map((tab) => tab.name),
+      },
+    ]);
+    const tab = tabs.find((tab) => tab.name === answers.tab);
+    const content = fs.readFileSync(path.join(dataDir, tab.path), "utf-8");
+    await displayContent(content);
+  } else {
+    console.log(chalk.red("Tabs not found"));
+  }
 }
 
 async function Check(answers) {
@@ -170,28 +263,11 @@ async function Check(answers) {
   if (answers.action === "Append to existing tab") {
     await ExistingTab();
   }
-  if (answers.action === "Display Tab") {
-    const tabs = fs
-      .readFileSync("tabs.txt", "utf-8")
-      .split("\n")
-      .filter(Boolean)
-      .map((tab) => {
-        const [name, path] = tab.split(" -- ");
-        return { name, path };
-      });
-
-    const answers = await inquirer.prompt([
-      {
-        type: "list",
-        name: "tab",
-        message: "Choose a tab",
-        choices: tabs.map((tab) => tab.name),
-      },
-    ]);
-
-    const tab = tabs.find((tab) => tab.name === answers.tab);
-    const content = fs.readFileSync(tab.path, "utf-8");
-    await displayContent(content);
+  if (answers.action === "Display Tabs") {
+    await displayTab();
+  }
+  if (answers.action === "Delete a Tab") {
+    await deleteTab();
   }
 }
 
@@ -203,11 +279,12 @@ async function main() {
       {
         type: "list",
         name: "action",
-        message: "Do you want to create a new tab or use an existing one?",
+        message: "What do you want to do?",
         choices: [
           "Create new tab",
           "Append to existing tab",
-          "Display Tab",
+          "Display Tabs",
+          "Delete a Tab",
           "Exit",
         ],
       },
@@ -216,13 +293,18 @@ async function main() {
     if (answers.action === "Exit") {
       break;
     }
-
     await Check(answers);
     const sleep = (ms = 2000) =>
       new Promise((resolve) => setTimeout(resolve, ms));
     await sleep(1000);
-    console.log(chalk.bold(chalk.red("---------------------------------------------------------------------------------")));
+    console.log(
+      chalk.bold(
+        chalk.red(
+          "---------------------------------------------------------------------------------"
+        )
+      )
+    );
   }
 }
 
-await main()
+await main();
