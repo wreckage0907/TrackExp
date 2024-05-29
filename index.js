@@ -196,19 +196,29 @@ async function Check(answers) {
 }
 
 // MAIN
-inquirer
-  .prompt([
-    {
-      type: "list",
-      name: "action",
-      message: "Do you want to create a new tab or use an existing one?",
-      choices: [
-        "Create new tab",
-        "Append to existing tab",
-        "Display Tab"
-      ],
-    },
-  ])
-  .then(async (answers) => {
+
+async function main() {
+  while (true) {
+    const answers = await inquirer.prompt([
+      {
+        type: "list",
+        name: "action",
+        message: "Do you want to create a new tab or use an existing one?",
+        choices: [
+          "Create new tab",
+          "Append to existing tab",
+          "Display Tab",
+          "Exit",
+        ],
+      },
+    ]);
+
+    if (answers.action === "Exit") {
+      break;
+    }
+
     await Check(answers);
-  });
+  }
+}
+
+await main()
