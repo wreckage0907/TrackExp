@@ -218,6 +218,10 @@ async function main() {
     }
 
     await Check(answers);
+    const sleep = (ms = 2000) =>
+      new Promise((resolve) => setTimeout(resolve, ms));
+    await sleep(1000);
+    console.log(chalk.bold(chalk.red("---------------------------------------------------------------------------------")));
   }
 }
 
